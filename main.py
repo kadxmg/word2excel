@@ -3,10 +3,6 @@
 本脚本实现从input文件夹的docx文件的相关数据
 到output文件夹的excel表格
 
-
-可提取的word文件示例：
-本委托人于2015年12月24日提取第【201】期委托资产现金资产价值人民币2,630,136.99元（大写人民币贰佰陆拾叁万零壹佰叁拾陆元玖角玖分），其中委托资产本金人民币0.00元，委托资产收益人民币2,630,136.99元，按照定向资产管理合同的规定，管理人签收后回传委托人并与其确认收到。
-提取其中的日期、期数、金额信息
 """
 import os
 import sys
@@ -15,12 +11,13 @@ sys.setdefaultencoding('utf8')  # 编译环境utf8
 from glob import glob
 import re
 import time
+import string
 try:
     from docx import Document
 except ImportError:
     print(u'缺少模块python-docx，正在自动安装')
     import subprocess
-    p = subprocess.Popen('easy_install python-docx', shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    p = subprocess.Popen('pip install', shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     print(p.stdout.readlines())
     for line in p.stdout.readlines():
         print(line)
@@ -32,7 +29,7 @@ try:
 except ImportError:
     print(u'缺少模块openpyxl，正在自动安装')
     import subprocess
-    p = subprocess.Popen('easy_install openpyxl', shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    p = subprocess.Popen('pip install openpyxl', shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     print(p.stdout.readlines())
     for line in p.stdout.readlines():
         print(line)
@@ -126,32 +123,76 @@ def parse_text_by_repat(text, re_pat):
 
 
 def read_docx(filename):
-    result = {
-        'date': None,
-        'stage': None,
-        'money': None,
-        # 'money1': None,
-    }
+    results = []
     document = Document(filename)
-    locate_text = u'本委托人'  # 定位段落的关键字
-    max_search_para = 10  # 最多搜索前n段来定位段落
+    count = 0
     print(u'定位并解析数据')
     for para_num, para in enumerate(document.paragraphs):
-        if para_num < max_search_para and locate_text in para.text:
-            # result1 = parse_text_by_repat(para.text, u'人民币(.*?)元')
+        try:
+            debug = True
+            if para.style.name.startswith("Heading"):
+                result = {
+                    'FileName': None,
+                    'Title': None,
+                    'ReqId': None,
+                    # 'money1': None,
+                }
+                #print('line %d' % para_num)
+                style = para.style
+                format = style.paragraph_format
+                if debug:
+                    print(" text:%s" % para.text)
+                    print(" style:%s" % style.name)
+                
+                while style.next_paragraph_style != style:
+                    style = style.next_paragraph_style
+                    if debug:
+                        print(" style:%s" % style.name)
 
-            for key in result.keys():
-                result[key] = parse_text_by_repat(para.text, re_pats[key])
+                for run_num, run in enumerate(para.runs):
+                    style = para.style
+                    format = style.paragraph_format
+                    if debug:
+                        print("  text:%s" % run.text)
+                        print("   style:%s" % run.style.name)
+                        while style.next_paragraph_style != style:
+                            style = style.next_paragraph_style
+                            if debug:
+                                print("   style:%s" % style.name)                            
+                        print("   strike:%s" % run.font.strike)
+                        
+                    if run.font.strike != True and len(run.text) > 1:
+                        #if run.style.name.startswith("Default Paragraph Font"):
+                        #    if result["Title"] == None:
+                        if result["Title"] == None:
+                            result["Title"] = run.text
+                        #else:
+                        #    if result["ReqId"] == None:
+                        elif result["ReqId"] == None:
+                            result["ReqId"] = run.text
+                            
+                if result["Title"] != None and  result["ReqId"] != None:
+                    
+                    print("Title:%s" % result["Title"])
+                    print("ReqId:%s" % result["ReqId"])  
+                    print(" ")
+                    result["FileName"] = os.path.basename(filename)
+                    results.append(result)                
+                
 
-            # # 可以更改
-            # result2 = re.findall(u'人民币(.*?)元', para.text)
-            # if len(result2) >= 2:
-            #     result['money1'] = result2[1]
-            # # 停止更改
-            return result
-            break  # 包含关键字则退出循环搜索
-        elif para_num >= max_search_para:
-            raise IOError(u'Error！文件前%s段不包含指定的文字：%s，请检查！' % (max_search_para, locate_text))
+            #selse:
+                #if para.style.name.startswith("ul_li"):
+                #    print(para.text)
+                #    print(para.style.name)
+                #else:
+                #    #print(para.text)
+                #    print(para.style.name)
+        except UnicodeEncodeError:
+            print(" UnicodeEncodeError")
+                    
+
+    print("count %d" % len(results))
+    return results
 
 def write_excel(excel_name, result_dicts):
     from openpyxl.workbook import Workbook
@@ -160,7 +201,7 @@ def write_excel(excel_name, result_dicts):
     from openpyxl.writer.excel import ExcelWriter
 
     #get_column_letter函数将数字转换为相应的字母，如1-->A,2-->B
-    from openpyxl.cell import get_column_letter
+    from openpyxl.utils  import get_column_letter
 
     from openpyxl.reader.excel import load_workbook
 
@@ -171,19 +212,18 @@ def write_excel(excel_name, result_dicts):
         #新建一个workbook
         wb = Workbook()
 
-
-    #新建一个excelWriter
-    ew = ExcelWriter(workbook = wb)
-
     #设置文件输出路径与名称
     dest_filename = excel_name
 
+    
     # # 获取第一个sheet
-    try:
-        ws = wb.get_sheet_by_name('sheet1')
-    except KeyError:
-        ws = wb.worksheets[0]
-        ws.title = "sheet1"
+
+    ws = wb.get_sheet_by_name('sheet1')
+    if ws != None:
+        wb.remove_sheet(ws)
+        
+    ws = wb.create_sheet('sheet1')
+
 
 
     #第一个sheet是ws
@@ -194,30 +234,33 @@ def write_excel(excel_name, result_dicts):
 
     line = 1
     print(u'定位写入坐标')
-    while ws.cell("A%s" % line).value:
+    while ws.cell(line,1).value:
         # print(ws.cell("A%s" % line).value)
         line += 1
     print(u'从第%s行开始写入' % line)
 
-    if not os.path.isfile(excel_name):
-        ws.cell("A%s" % line).value=u'期数'
-        ws.cell("B%s" % line).value=u'定向计划提取'
-        ws.cell("C%s" % line).value=u'大写'
-        ws.cell("D%s" % line).value=u'到期时间'
-        ws.cell("E%s" % line).value=u'交付金额'
-        line += 1
+
+    #Title
+    ws.cell(line,1).value=u'FileName'
+    ws.cell(line,2).value=u'Title'
+    ws.cell(line,2).value=u'ReqId'
+    ws.cell(line,4).value=u'Content'
+    ws.cell(line,5).value=u'Owner'
+    line += 1
+    
     for i, result in enumerate(result_dicts):
         print(u'正在写入第%s条数据到excel' % (i+1))
-        ws.cell("A%s" % line).value=result['stage']
-        ws.cell("B%s" % line).value=result['money']
-        ws.cell("C%s" % line).value=''
-        ws.cell("D%s" % line).value=result['date']
-        ws.cell("E%s" % line).value=result['money']
+        print(u'正在写入 %s' % result['FileName'])
+        print(u'正在写入 %s' % result['Title'])
+        print(u'正在写入 %s' % result['ReqId'])
+        ws.cell(line,1).value=result['FileName']
+        ws.cell(line,2).value=result['Title']
+        ws.cell(line,3).value=result['ReqId']
         line += 1
 
     #最后保存文件
-    ew.save(filename=excel_name)
-
+    wb.save(filename=dest_filename)
+    
 def main():
     print(u'开始执行')
     print(u'从input文件夹查找docx文件')
@@ -226,8 +269,12 @@ def main():
     for filename in filenames:
         print(u'读取文件：')
         clr.print_blue_text(os.path.basename(filename))
-        # print(os.path.basename(filename))
-        result_dicts.append(read_docx(filename))
+        
+        results = read_docx(filename)
+        #print(len(results))
+        #add for each one
+        for result in results:
+            result_dicts.append(result)
     save_filename = 'output/output.xlsx'
     # save_filename = 'output/output%s.xlsx' % int(time.time())
     write_excel(save_filename, result_dicts)
