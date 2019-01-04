@@ -191,8 +191,12 @@ def read_docx(filename):
                 #    print(para.style.name)
         except UnicodeEncodeError:
             print(" UnicodeEncodeError")
-                    
-
+     
+    #save the last para
+    if len(results) > 1: # skip the first one
+        results[-1]["Content"] = content # save the last one content
+    content = "" # empty the content
+        
     print("count %d" % len(results))
     return results
 
