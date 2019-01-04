@@ -125,8 +125,10 @@ def parse_text_by_repat(text, re_pat):
 def read_docx(filename):
     results = []
     document = Document(filename)
-    count = 0
     print(u'定位并解析数据')
+    fillcontent = False
+    content = ""
+    
     for para_num, para in enumerate(document.paragraphs):
         try:
             debug = True
@@ -135,7 +137,7 @@ def read_docx(filename):
                     'FileName': None,
                     'Title': None,
                     'ReqId': None,
-                    # 'money1': None,
+                    'Content': None,
                 }
                 #print('line %d' % para_num)
                 style = para.style
@@ -158,9 +160,9 @@ def read_docx(filename):
                         while style.next_paragraph_style != style:
                             style = style.next_paragraph_style
                             if debug:
-                                print("   style:%s" % style.name)                            
+                                print("   style:%s" % style.name)
                         print("   strike:%s" % run.font.strike)
-                        
+
                     if run.font.strike != True and len(run.text) > 1:
                         #if run.style.name.startswith("Default Paragraph Font"):
                         #    if result["Title"] == None:
@@ -170,21 +172,21 @@ def read_docx(filename):
                         #    if result["ReqId"] == None:
                         elif result["ReqId"] == None:
                             result["ReqId"] = run.text
-                            
+
                 if result["Title"] != None and  result["ReqId"] != None:
-                    
+                    fillcontent = True
                     print("Title:%s" % result["Title"])
                     print("ReqId:%s" % result["ReqId"])  
                     print(" ")
                     result["FileName"] = os.path.basename(filename)
-                    results.append(result)                
-                
+                    if len(results) > 1: # skip the first one
+                        results[-1]["Content"] = content # save the last one content
+                    content = "" # empty the content
+                    results.append(result)
 
-            #selse:
-                #if para.style.name.startswith("ul_li"):
-                #    print(para.text)
-                #    print(para.style.name)
-                #else:
+            else:
+                if len(para.text) > 1:
+                    content = content + para.text + "\n"
                 #    #print(para.text)
                 #    print(para.style.name)
         except UnicodeEncodeError:
@@ -196,6 +198,11 @@ def read_docx(filename):
 
 def write_excel(excel_name, result_dicts):
     from openpyxl.workbook import Workbook
+    
+    from openpyxl.styles import Alignment
+    alignment = Alignment(
+        wrap_text = True, # 自动换行
+    )
 
     #ExcelWriter,里面封装好了对Excel的写操作
     from openpyxl.writer.excel import ExcelWriter
@@ -218,12 +225,11 @@ def write_excel(excel_name, result_dicts):
     
     # # 获取第一个sheet
 
-    ws = wb.get_sheet_by_name('sheet1')
+    ws = wb.get_active_sheet()
     if ws != None:
         wb.remove_sheet(ws)
-        
-    ws = wb.create_sheet('sheet1')
-
+       
+    ws = wb.create_sheet('Sheet1')
 
 
     #第一个sheet是ws
@@ -243,9 +249,10 @@ def write_excel(excel_name, result_dicts):
     #Title
     ws.cell(line,1).value=u'FileName'
     ws.cell(line,2).value=u'Title'
-    ws.cell(line,2).value=u'ReqId'
+    ws.cell(line,3).value=u'ReqId'
     ws.cell(line,4).value=u'Content'
     ws.cell(line,5).value=u'Owner'
+    ws.column_dimensions['D'].width = 50.0
     line += 1
     
     for i, result in enumerate(result_dicts):
@@ -256,6 +263,8 @@ def write_excel(excel_name, result_dicts):
         ws.cell(line,1).value=result['FileName']
         ws.cell(line,2).value=result['Title']
         ws.cell(line,3).value=result['ReqId']
+        ws.cell(line,4).value=result['Content']
+        ws.cell(line,4).alignment=alignment
         line += 1
 
     #最后保存文件
